@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#262522">
+<meta name="description" content="Revise suas partidas do chess.com lance a lance, veja onde você erra e treine com exercícios feitos para você.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lance a Lance">
+<title>Lance a Lance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="pieces.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-games" viewBox="0 0 24 24"><path d="M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm1 2v4h4V5H5zm6 0v4h4V5h-4zm6 0v4h2V5h-2zM5 11v4h4v-4H5zm6 0v4h4v-4h-4zm6 0v4h2v-4h-2zM5 17v2h4v-2H5zm6 0v2h4v-2h-4zm6 0v2h2v-2h-2z" opacity=".35"/><path d="M5 5h4v4H5zm6 6h4v4h-4zm6-6h2v4h-2zM5 17h4v2H5zm12-6h2v4h-2zm-6 6h4v2h-4z"/></symbol>
+  <symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20V10h3.5v10H4zm6.25 0V4h3.5v16h-3.5zM16.5 20v-7H20v7h-3.5z"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M10 3a2.5 2.5 0 0 1 2.45 3H16a1 1 0 0 1 1 1v3.55A2.5 2.5 0 1 1 17 15.45V19a1 1 0 0 1-1 1h-3.55a2.5 2.5 0 1 0-4.9 0H4a1 1 0 0 1-1-1v-3.55a2.5 2.5 0 1 0 0-4.9V7a1 1 0 0 1 1-1h3.55A2.5 2.5 0 0 1 10 3z"/></symbol>
+  <symbol id="i-learn" viewBox="0 0 24 24"><path d="M12 3 1 9l11 6 9-4.91V17h2V9L12 3zm-6.82 9.36v4L12 21l6.82-4.64v-4L12 16l-6.82-3.64z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-2 6v8l6-4-6-4z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></symbol>
+  <symbol id="i-first" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z"/></symbol>
+  <symbol id="i-last" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 21h6v-1H9v1zm3-19a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M12 5C7 5 2.73 8.11 1 12.5 2.73 16.89 7 20 12 20s9.27-3.11 11-7.5C21.27 8.11 17 5 12 5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></symbol>
+  <symbol id="i-flip" viewBox="0 0 24 24"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 6.99h3V14h2V6.99h3L9 3z"/></symbol>
+  <symbol id="i-bullet" viewBox="0 0 24 24"><path d="M20 4c-6 0-10 3-13 8l-3 1 3 3 1 3 1-3c5-3 8-7 8-13zM6 18l-2 2"/></symbol>
+  <symbol id="i-blitz" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></symbol>
+  <symbol id="i-rapid" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.41V6h-2v7.24l5.3 3.18 1-1.64-4.3-2.37z"/></symbol>
+  <symbol id="i-daily" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V9h14v11z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <aside class="side" aria-label="Navegação">
+    <div class="brand"><span class="pc wn"></span>Lance a Lance</div>
+    <nav class="nav" id="nav">
+      <button class="navi" data-tab="games"><svg><use href="#i-games"/></svg><span>Partidas</span></button>
+      <button class="navi" data-tab="stats"><svg><use href="#i-stats"/></svg><span>Desempenho</span></button>
+      <button class="navi" data-tab="puzzles"><svg><use href="#i-puzzle"/></svg><span>Exercícios</span></button>
+      <button class="navi" data-tab="learn"><svg><use href="#i-learn"/></svg><span>Aprender</span></button>
+      <button class="navi" data-tab="play"><svg><use href="#i-play"/></svg><span>Jogar</span></button>
+    </nav>
+    <div class="me" id="me"></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar"><div class="brand"><span class="pc wn"></span>Lance a Lance</div><div id="meTop" class="row"></div></div>
+
+    <!-- Partidas -->
+    <section class="view" id="v-games" hidden>
+      <div class="page-h"><h1>Últimas partidas</h1><button class="btn sm" id="refreshBtn" aria-label="Buscar partidas novas"><svg><use href="#i-refresh"/></svg>Atualizar</button></div>
+      <div class="progline" id="bgProg" hidden><span id="bgProgText"></span><div class="bar"><i id="bgProgBar"></i></div></div>
+      <p class="muted" id="gamesMsg" hidden></p>
+      <div class="glist" id="gameList"></div>
+    </section>
+
+    <!-- Revisão -->
+    <section class="view flush" id="v-review" hidden>
+      <div class="stage">
+        <div class="boardcol" id="rvBoardCol"></div>
+        <div class="side-panel">
+          <div class="sp-h"><button class="btn ghost icon" id="rvBack" aria-label="Voltar às partidas"><svg><use href="#i-back"/></svg></button><span class="grow" id="rvTitle">Revisão da partida</span><button class="btn ghost sm" id="rvSumBtn">Resumo</button></div>
+          <div class="sp-body" id="rvBody"></div>
+          <div class="sp-foot" id="rvFoot"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Desempenho -->
+    <section class="view" id="v-stats" hidden></section>
+
+    <!-- Exercícios -->
+    <section class="view" id="v-puzzles" hidden></section>
+    <section class="view flush" id="v-puzzle" hidden>
+      <div class="stage">
+        <div class="boardcol" id="pzBoardCol"></div>
+        <div class="side-panel">
+          <div class="sp-h"><button class="btn ghost icon" id="pzBack" aria-label="Voltar aos exercícios"><svg><use href="#i-back"/></svg></button><span class="grow" id="pzTitle">Exercício</span><span class="chip" id="pzRating"></span></div>
+          <div class="sp-body" id="pzBody"></div>
+          <div class="sp-foot" id="pzFoot"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Aprender -->
+    <section class="view" id="v-learn" hidden></section>
+    <section class="view flush" id="v-lesson" hidden>
+      <div class="stage">
+        <div class="boardcol" id="lsBoardCol"></div>
+        <div class="side-panel">
+          <div class="sp-h"><button class="btn ghost icon" id="lsBack" aria-label="Voltar"><svg><use href="#i-back"/></svg></button><span class="grow" id="lsTitle"></span></div>
+          <div class="sp-body" id="lsBody"></div>
+          <div class="sp-foot" id="lsFoot"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Jogar -->
+    <section class="view flush" id="v-play" hidden>
+      <div class="stage">
+        <div class="boardcol" id="plBoardCol"></div>
+        <div class="side-panel">
+          <div class="sp-h"><span class="grow">Jogar contra o computador</span></div>
+          <div class="sp-body" id="plBody"></div>
+          <div class="sp-foot" id="plFoot"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot view" id="foot">
+      <span id="engineInfo">Carregando o motor…</span><br>
+      Motor: Stockfish (GPL, <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">código-fonte</a>). Peças: cburnett (GPL). Partidas: API pública do chess.com. Elo e precisão são estimativas.
+    </footer>
+  </main>
+</div>
+
+<div class="onboard" id="onboard" hidden>
+  <form class="ob-card" id="obForm">
+    <span class="pc wn"></span>
+    <h1>Lance a Lance</h1>
+    <p>Revise suas partidas do chess.com, descubra onde você erra e treine para a próxima.</p>
+    <input class="input" id="obUser" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Seu usuário do chess.com" aria-label="Seu usuário do chess.com">
+    <button class="btn go big" type="submit">Entrar</button>
+    <p class="muted" id="obMsg" style="font-size:14px"></p>
+  </form>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="chess.js"></script>
+<script src="content.js"></script>
+<script src="puzzles.js"></script>
+<script src="core.js"></script>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

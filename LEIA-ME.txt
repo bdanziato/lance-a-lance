@@ -1,0 +1,43 @@
+LANCE A LANCE - versão 5
+========================
+
+Abas
+----
+- Partidas: suas últimas partidas do chess.com. Toque em uma para ver a revisão lance a lance
+  (classificação de cada lance, melhor lance, nome da tática, "Tentar de novo" e resumo).
+  "Por quê?" compara o seu lance com o melhor, lance a lance, e deixa você testar outro lance.
+  "Perguntar ao treinador" abre o Treinador no Claude, com chat sobre aquela posição
+  (usa a sua conta do Claude; abra logado no app do Claude ou em claude.ai).
+- Desempenho: onde você mais perde pontos, precisão por fase, táticas nos seus erros,
+  relógio e aberturas.
+- Exercícios: treino recomendado com base nos seus erros, posições das suas próprias partidas,
+  xeque-mates e táticas por tema.
+- Aprender: aberturas (assistir e praticar), estratégia e mates contra o computador.
+- Jogar: partida contra o computador no seu Elo, que vai direto para a revisão no fim.
+
+Como atualizar o site que você já tem no Netlify (mesmo endereço)
+------------------------------------------------------------------
+  1. Descompacte este .zip. Aparece a pasta "lance-a-lance".
+  2. Entre em https://app.netlify.com e abra o seu projeto (funny-bonbon-eb1b9d).
+  3. Vá na aba "Deploys".
+  4. Arraste a pasta "lance-a-lance" para a área "Drag and drop your project output folder here".
+  5. Em alguns segundos o endereço de sempre já mostra a versão nova.
+  Não use o app.netlify.com/drop de novo: ele cria outro site, com outro endereço.
+
+No celular, feche e abra o app uma vez para carregar a versão nova.
+A primeira abertura baixa o motor de análise (cerca de 7 MB) uma única vez.
+
+Observações
+-----------
+- Seu usuário, as análises, o rating de exercícios e o progresso ficam salvos no aparelho.
+- Abrir o index.html direto do computador (dois cliques) não funciona: use o endereço do site.
+- O Elo do computador, o "Elo da partida" e a precisão são estimativas.
+
+Licenças
+--------
+- Stockfish 18 e Stockfish 10 (stockfish-18-lite-single.*, stockfish-10.js): GPL v3.
+  Código-fonte: https://github.com/nmrugg/stockfish.js
+- Peças "cburnett" (pieces.css), de Colin M.L. Burnett: GPLv2+, via chessground (Lichess).
+- chess.js (chess.js): licença BSD-2. https://github.com/jhlywa/chess.js
+- Exercícios (puzzles.js): gerados com o Stockfish para este app.
+- Dados de partidas e rating: API pública do chess.com.
