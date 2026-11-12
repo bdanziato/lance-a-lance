@@ -408,3 +408,55 @@ function whyText(base, mine, best, me){
   if (best.saldo > mine.saldo) return `Com ${pb} o saldo de material fica ${best.saldo - mine.saldo} ${best.saldo - mine.saldo===1 ? 'ponto' : 'pontos'} melhor para você do que com ${pm}.`;
   return `Os dois caminhos ganham material parecido, mas ${pb} deixa sua posição melhor depois da troca.`;
 }
+
+/* ===== cenários do "Por quê?" (usado no app e no Treinador) ===== */
+// Posição igual, mas com a vez passada ao outro lado ("e se o adversário não fizesse nada?")
+function nullFen(fen){ const p = fen.split(' '); p[1] = p[1]==='w' ? 'b' : 'w'; p[3] = '-'; return p.join(' '); }
+// O que o lance pretende: xeque, captura, peças atacadas e a ameaça (lance seguinte se o adversário não reagisse)
+function intentOf(base, uci, threat){
+  const g = new Chess(base); const m = uciMove(g, uci); const out = {parts:[], attacked:[], threat:null};
+  if (!m) return out;
+  const me = m.color, opp = me==='w' ? 'b' : 'w', map = boardMap(g);
+  if (g.in_checkmate()){ out.parts.push('dá xeque-mate'); return out; }
+  if (g.in_check()) out.parts.push('dá xeque');
+  if (m.captured) out.parts.push('captura ' + PUM[m.captured]);
+  attacksFrom(map, m.to).forEach(s => { const p = map[s]; if (p && p.color===opp && p.type!=='k' && p.type!=='p' && (VAL[p.type] > VAL[m.piece] || attackersOf(map, s, opp).length===0)) out.attacked.push(s); });
+  out.attacked.slice(0, 2).forEach(s => out.parts.push(`ataca ${PART[map[s].type]} em ${s}`));
+  if (threat && threat.info && threat.info.first && !g.in_check()){
+    const t = threat.info, san = ptSan(t.sans[0]);
+    if (t.mate===me){ out.parts.push(`ameaça mate com ${san}`); out.threat = t; }
+    else if (t.saldo >= 2 && piecesText(t.gain)){ out.parts.push(`ameaça ${san}, que ganharia ${piecesText(t.gain)}`); out.threat = t; }
+  }
+  return out;
+}
+const GOOD_CLS = ['brilhante','otimo','melhor','excelente','bom','livro','forcado'];
+function evalMeText(s){ if (!s) return ''; return ('mate' in s) ? (s.mate>0 ? `mate em ${s.mate} para você` : s.mate===0 ? 'xeque-mate' : `você leva mate em ${-s.mate}`) : `${s.cp>=0?'+':''}${(s.cp/100).toFixed(1)}`; }
+// Monta as frases de cada cenário. Recebe tudo já calculado.
+function narrate(o){
+  // o: {pm, pb, cls, wb, wa, opp, intent, game:{info, reply, replyCls, evalMe}|null, mine:{info, reply, evalMe}, best:{info, evalMe}, why}
+  const N = {};
+  const wb = Math.round(o.wb), wa = Math.round(o.wa);
+  const d = wb - wa;
+  N.size = o.cls==='perdido' ? `Havia uma chance melhor: ${wb}% contra ${wa}% de chance de vencer.`
+    : d < 3 ? `Diferença mínima: ${wb}% contra ${wa}% de chance de vencer.`
+    : d < 10 ? `Diferença pequena: sua chance de vencer foi de ${wb}% para ${wa}%. Seu plano é jogável; o melhor lance só é mais preciso.`
+    : d < 20 ? `Diferença grande: sua chance de vencer caiu de ${wb}% para ${wa}%. A ideia tinha um furo.`
+    : `Diferença decisiva: sua chance de vencer caiu de ${wb}% para ${wa}%.`;
+  N.idea = o.intent.parts.length ? `Com ${o.pm}, você ${o.intent.parts.join(' e ')}.` : `${o.pm} não cria uma ameaça imediata: é um lance de posição.`;
+  const same = o.game && o.game.reply && o.mine.reply && o.game.reply.from===o.mine.reply.from && o.game.reply.to===o.mine.reply.to;
+  if (!o.game || !o.game.reply) N.game = 'A partida terminou neste lance.';
+  else {
+    const r = ptSan(o.game.reply.san), ok = GOOD_CLS.indexOf(o.game.replyCls)>=0;
+    let t = `${o.opp} respondeu ${r}` + (same ? ', exatamente o que o computador esperava' : ok ? ', uma boa resposta' : `, ${CLS[o.game.replyCls] ? CLS[o.game.replyCls].a : 'um erro'}`) + '. ';
+    if (o.intent.parts.length && ok) t += 'Essa resposta neutralizou a sua ideia. ';
+    else if (!ok) t += o.game.info.saldo > o.mine.info.saldo ? 'Ele errou e você aproveitou. ' : 'Ele errou, mas a chance passou. ';
+    t += `Nos lances seguintes: ${lineSummary(o.game.info, o.me)}` + (o.game.evalMe ? ` Avaliação: ${evalMeText(o.game.evalMe)}.` : '');
+    N.game = t;
+  }
+  N.same = !!same;
+  N.mine = o.mine.reply ? (same ? `Foi o que aconteceu: com ${ptSan(o.mine.reply.san)}, ${lowerFirst(lineSummary(o.mine.info, o.me))} Avaliação: ${evalMeText(o.mine.evalMe)}.`
+    : `Se ele respondesse ${ptSan(o.mine.reply.san)}: ${lowerFirst(lineSummary(o.mine.info, o.me))} Avaliação: ${evalMeText(o.mine.evalMe)}.`) : `${lineSummary(o.mine.info, o.me)}`;
+  N.best = `${o.pb}: ${lowerFirst(lineSummary(o.best.info, o.me))} Avaliação: ${evalMeText(o.best.evalMe)}.` + (o.why ? ' ' + o.why : '');
+  return N;
+}
+function lowerFirst(s){ return s ? s[0].toLowerCase() + s.slice(1) : s; }

@@ -582,64 +582,90 @@ function b64url(obj){
 function trainerHref(R, i, testUci){
   const oc = R.moves[i].color==='w' ? 'b' : 'w';
   const pay = {f:R.fens[i], p:testUci || uciOf(R.moves[i]), o:(R.names[oc]||{}).name || '', g: i <= 60 ? linePT(R.fens[0], R.moves.slice(0, i).map(uciOf)) : ''};
-  if (!testUci) pay.cl = R.items[i].c;
+  if (!testUci){ pay.cl = R.items[i].c; const cont = R.moves.slice(i, i + 8).map(uciOf); if (cont.length > 1) pay.a = cont.join(' '); }
   return TRAINER + '#' + b64url(pay);
 }
 async function openCompare(i){
   const R = RV.R, base = R.fens[i], me = R.moves[i].color;
-  RV.cmp = {i, tab:'mine', k:1, loading:true, tok:{}};
+  RV.cmp = {i, tab:'idea', k:1, loading:true, tok:{}};
   renderReview();
   const tok = RV.cmp.tok; const played = uciOf(R.moves[i]);
   const gA = new Chess(base); uciMove(gA, played);
-  const [b, a] = await Promise.all([analysePos(base, {movetime:900, multipv:1, jsDepth:3, jsMs:900}, 2), analysePos(gA.fen(), {movetime:900, multipv:1, jsDepth:3, jsMs:900}, 2)]);
+  const nf = gA.in_check() || gA.game_over() ? null : nullFen(gA.fen());
+  const jobs = [analysePos(base, {movetime:900, multipv:1, jsDepth:3, jsMs:900}, 2), analysePos(gA.fen(), {movetime:900, multipv:1, jsDepth:3, jsMs:900}, 2)];
+  if (nf) jobs.push(analysePos(nf, {movetime:600, multipv:1, jsDepth:2, jsMs:600}, 2).catch(() => null));
+  const [b, a, t] = await Promise.all(jobs);
   if (!RV || !RV.cmp || RV.cmp.tok!==tok) return;
   const bestLine = b.lines[0] ? b.lines[0].pv.slice(0, 8) : [R.items[i].bestUci];
   const mineLine = [played].concat(a.lines[0] ? a.lines[0].pv.slice(0, 7) : []);
-  Object.assign(RV.cmp, {loading:false, mine:lineInfo(base, mineLine, me), best:lineInfo(base, bestLine, me)});
+  const threat = t && t.lines && t.lines[0] ? {ucis: t.lines[0].pv.slice(0, 3), info: lineInfo(nf, t.lines[0].pv.slice(0, 3), me)} : null;
+  // o que aconteceu de verdade na partida
+  const gameUcis = R.moves.slice(i, i + 8).map(uciOf);
+  const j = i + gameUcis.length, endFen = R.fens[j];
+  let gameEval = null;
+  if (R.an[j]){ const tt = endFen.split(' ')[1]; gameEval = new Chess(endFen).in_checkmate() ? {mate:0} : (tt===me ? R.an[j].score : neg(R.an[j].score)); }
+  const mine = lineInfo(base, mineLine, me), best = lineInfo(base, bestLine, me);
+  const game = R.moves[i+1] ? {info: lineInfo(base, gameUcis, me), reply: R.moves[i+1], replyCls: R.items[i+1].c, evalMe: gameEval, ucis: gameUcis} : null;
+  const intent = intentOf(base, played, threat);
+  const it = R.items[i];
+  const oppName = (R.names[me==='w' ? 'b' : 'w'] || {}).name || 'O adversário';
+  const N = narrate({pm: ptSan(R.moves[i].san), pb: ptSan(best.sans[0] || R.moves[i].san), cls: it.c, wb: it.wb, wa: it.wa, opp: oppName, me, intent,
+    game, mine:{info:mine, reply: mine.ucis[1] ? moveFromUci(gA.fen(), mine.ucis[1]) : null, evalMe: neg(a.score)}, best:{info:best, evalMe: b.score}, why: whyText(base, mine, best, me)});
+  Object.assign(RV.cmp, {loading:false, mine, best, game, intent, threat, nf, after: gA.fen(), N});
   renderReview();
 }
-function cmpLine(){ const c = RV.cmp; return c.tab==='mine' ? c.mine : c.tab==='best' ? c.best : c.test; }
+function cmpLine(){ const c = RV.cmp; return c.tab==='mine' ? c.mine : c.tab==='best' ? c.best : c.tab==='game' ? (c.game && c.game.info) : c.tab==='test' ? c.test : null; }
 function renderCompare(){
   const R = RV.R, c = RV.cmp, i = c.i, base = R.fens[i], me = R.moves[i].color, st = rvStage;
   $('rvTitle').textContent = 'Por quê?'; $('rvSumBtn').textContent = 'Resumo';
   setEval(st.ev, R.an[i].score, base.split(' ')[1], R.userColor);
   if (c.loading){
     st.board.set({fen:base, orient:R.userColor});
-    $('rvBody').innerHTML = bubble('Comparando os lances…', '<p>O Stockfish está calculando as duas sequências.</p>');
+    $('rvBody').innerHTML = bubble('Analisando a jogada…', '<p>O Stockfish está calculando a sua ideia, o que aconteceu na partida e o melhor caminho.</p>');
     $('rvFoot').innerHTML = '<button class="btn sm" id="cmpClose">Voltar à revisão</button>';
     $('cmpClose').onclick = () => { RV.cmp = null; renderReview(); };
     return;
   }
-  const L = cmpLine();
-  if (c.tab==='test' && !L){
+  const L = cmpLine(), N = c.N;
+  if (c.tab==='idea'){
+    const m = R.moves[i]; const marks = {}; c.intent.attacked.forEach(s => marks[s] = 'rgba(230,145,44,.85)');
+    const arrows = c.intent.threat && c.threat ? [{from:c.threat.ucis[0].slice(0,2), to:c.threat.ucis[0].slice(2,4), color:'#e6912c', op:.8}] : [];
+    st.board.set({fen:c.after, orient:R.userColor, last:[m.from, m.to], marks, arrows});
+  } else if (c.tab==='test' && !L){
     st.board.set({fen:base, orient:R.userColor, movable:me, onMove:cmpTest});
-  } else {
+  } else if (L){
     const g = new Chess(base); let last = null;
     for (let k=0;k<c.k;k++){ const m = uciMove(g, L.ucis[k]); if (!m) break; last = [m.from, m.to]; }
     const next = L.ucis[c.k];
-    st.board.set({fen:g.fen(), orient:R.userColor, last, arrows: next ? [{from:next.slice(0,2), to:next.slice(2,4), color: c.tab==='mine' ? '#e6912c' : '#81b64c', op:.75}] : [], movable: c.tab==='test' ? null : undefined});
+    const col = c.tab==='best' ? '#81b64c' : c.tab==='game' ? '#5c8bb0' : '#e6912c';
+    st.board.set({fen:g.fen(), orient:R.userColor, last, arrows: next ? [{from:next.slice(0,2), to:next.slice(2,4), color:col, op:.75}] : [], movable: c.tab==='test' ? null : undefined});
   }
-  const pm = ptSan(c.mine.sans[0]), pb = ptSan(c.best.sans[0] || c.mine.sans[0]);
-  const card = (key, title, info, col) => `<button class="pick" data-tab="${key}" aria-pressed="${c.tab===key}" style="--c:var(${col})"><b>${esc(title)}</b><small>${info ? esc(lineSummary(info, me)) : 'Jogue qualquer lance no tabuleiro.'}</small></button>`;
+  const pm = ptSan(R.moves[i].san), pb = ptSan(c.best.sans[0] || R.moves[i].san);
+  const scen = (key, title, text, col) => `<button class="scen" data-tab="${key}" aria-pressed="${c.tab===key}" style="--c:var(${col})"><b>${esc(title)}</b><span>${esc(text)}</span></button>`;
   let chips = '';
-  if (L){
+  if (L && c.tab!=='idea'){
     const gg = new Chess(base); let num = +base.split(' ')[5] || 1, turn = base.split(' ')[1];
     L.ucis.forEach((u, k) => { const m = uciMove(gg, u); if (!m) return; if (turn==='w') chips += `<span class="num">${num}.</span>`; else if (k===0) chips += `<span class="num">${num}...</span>`; chips += `<button data-ck="${k+1}" class="${c.k===k+1?'cur':''}">${ptSan(m.san)}</button>`; if (turn==='b') num++; turn = turn==='w' ? 'b' : 'w'; });
   }
-  const why = whyText(base, c.mine, c.best, me);
-  $('rvBody').innerHTML = bubble(`${pm} × ${pb}`, `<p>${esc(why)}</p>`) +
-    `<div class="picks">${card('mine', 'Seu lance: ' + pm, c.mine, CLS[R.items[i].c].c)}${card('best', 'Melhor: ' + pb, c.best, '--c-melhor')}</div>
-     ${card('test', c.test ? 'Seu teste: ' + ptSan(c.test.sans[0]) : 'Testar outro lance', c.test, '--c-otimo')}
-     ${L ? `<div class="mstrip" style="flex-wrap:wrap">${chips}</div>` : ''}
-     ${R.moves[i].color===R.userColor ? `<a class="btn sm" href="${trainerHref(R, i, c.tab==='test' && c.test ? c.test.ucis[0] : null)}" target="_blank" rel="noopener">Perguntar ao treinador sobre ${esc(c.tab==='test' && c.test ? ptSan(c.test.sans[0]) : pm)}</a>` : ''}`;
-  $('rvFoot').innerHTML = `${L ? `<div class="ctrls"><button class="btn" data-cn="0" aria-label="Início"><svg><use href="#i-first"/></svg></button><button class="btn" data-cn="-1" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button><button class="btn go" data-cn="1" aria-label="Próximo"><svg><use href="#i-next"/></svg></button><button class="btn" data-cn="9" aria-label="Fim"><svg><use href="#i-last"/></svg></button></div>` : ''}<button class="btn sm" id="cmpClose">Voltar à revisão</button>`;
+  const showMine = !N.same && c.mine.ucis.length > 1;
+  $('rvBody').innerHTML = bubble(`${pm} × ${pb}`, `<p>${esc(N.size)}</p>`) +
+    `<div class="scens">
+      ${scen('idea', '1 · Sua ideia', N.idea, '--c-otimo')}
+      ${scen('game', '2 · Na partida', N.game, '--c-livro')}
+      ${showMine ? scen('mine', '3 · Se ele respondesse certo', N.mine, CLS[R.items[i].c].c) : ''}
+      ${scen('best', (showMine ? '4' : '3') + ' · Melhor caminho', N.best, '--c-melhor')}
+      ${scen('test', 'Testar outro lance', c.test ? `${ptSan(c.test.sans[0])}: ${lineSummary(c.test, me)}` : 'Jogue qualquer lance no tabuleiro para ver o que aconteceria.', '--c-forc')}
+    </div>
+    ${chips ? `<div class="mstrip" style="flex-wrap:wrap">${chips}</div>` : ''}
+    ${R.moves[i].color===R.userColor ? `<a class="btn sm" href="${trainerHref(R, i, c.tab==='test' && c.test ? c.test.ucis[0] : null)}" target="_blank" rel="noopener">Perguntar ao treinador sobre ${esc(c.tab==='test' && c.test ? ptSan(c.test.sans[0]) : pm)}</a>` : ''}`;
+  $('rvFoot').innerHTML = `${L && c.tab!=='idea' ? `<div class="ctrls"><button class="btn" data-cn="0" aria-label="Início"><svg><use href="#i-first"/></svg></button><button class="btn" data-cn="-1" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button><button class="btn go" data-cn="1" aria-label="Próximo"><svg><use href="#i-next"/></svg></button><button class="btn" data-cn="9" aria-label="Fim"><svg><use href="#i-last"/></svg></button></div>` : ''}<button class="btn sm" id="cmpClose">Voltar à revisão</button>`;
   $('cmpClose').onclick = () => { RV.cmp = null; renderReview(); };
 }
 async function cmpTest(from, to, promo){
   const R = RV.R, c = RV.cmp, base = R.fens[c.i], me = R.moves[c.i].color;
   const g = new Chess(base); const m = g.move({from, to, promotion:promo}); if (!m) return false;
   rvStage.board.set({fen:g.fen(), orient:R.userColor, last:[m.from, m.to]}, {from:m.from, to:m.to});
-  $('rvBody').querySelector('.bubble p').textContent = 'Calculando a sequência do seu teste…';
+  const sp = $('rvBody').querySelector('.scen[data-tab="test"] span'); if (sp) sp.textContent = 'Calculando a sequência do seu teste…';
   const tok = c.tok; const a = await analysePos(g.fen(), {movetime:800, multipv:1, jsDepth:3, jsMs:800}, 2);
   if (!RV || RV.cmp!==c || c.tok!==tok) return;
   c.test = lineInfo(base, [uciOf(m)].concat(a.lines[0] ? a.lines[0].pv.slice(0, 7) : []), me); c.k = 1;
@@ -647,7 +673,7 @@ async function cmpTest(from, to, promo){
 }
 $('rvBody').addEventListener('click', e => {
   if (!RV || !RV.cmp || RV.cmp.loading) return;
-  const t = e.target.closest('[data-tab]'); if (t){ RV.cmp.tab = t.dataset.tab; RV.cmp.k = t.dataset.tab==='test' && !RV.cmp.test ? 0 : 1; renderReview(); return; }
+  const t = e.target.closest('[data-tab]'); if (t){ RV.cmp.tab = t.dataset.tab; RV.cmp.k = (t.dataset.tab==='test' && !RV.cmp.test) ? 0 : 1; renderReview(); return; }
   const k = e.target.closest('[data-ck]'); if (k){ RV.cmp.k = +k.dataset.ck; renderReview(); }
 });
 $('rvFoot').addEventListener('click', e => {
@@ -973,8 +999,73 @@ $('pzBack').addEventListener('click', back);
 /* =====================================================================
    Aprender
    ===================================================================== */
+/* --- seu repertório: linhas montadas a partir das suas partidas --- */
+const REP = {};
+const CLS_PT = c => (CLS[c] ? CLS[c].n.toLowerCase() : c);
+function repertoire(){
+  const F = {};
+  G.list.forEach(info => {
+    const d = reviewData(info); if (!d || d.startFen !== START || d.moves.length < 6) return;
+    const name = famOf(openingInfo(d.moves.map(m => m.san)).name); if (name==='Outras') return;
+    const k = info.side + '|' + name; (F[k] = F[k] || {side:info.side, name, games:[], W:0, D:0, L:0}).games.push({info, d}); F[k][info.res]++;
+  });
+  return Object.values(F).filter(f => f.games.length >= 2).sort((a, b) => b.games.length - a.games.length).slice(0, 6);
+}
+function contentWhy(sans, p){
+  for (const o of CONTENT.openings){
+    if (o.line.length <= p) continue;
+    let ok = true; for (let k=0;k<=p;k++) if (o.line[k][0].replace(/[+#]/g,'') !== (sans[k]||'').replace(/[+#]/g,'')){ ok = false; break; }
+    if (ok && o.line[p][1]) return o.line[p][1];
+  }
+  return null;
+}
+function buildRepLesson(f){
+  const mine = p => (p % 2 === 0) === (f.side === 'w');
+  let follow = f.games.slice(); const sans = [], freq = [];
+  for (let p=0; p<16; p++){
+    const cnt = {}; follow.forEach(x => { const m = x.d.moves[p]; if (m) cnt[m.san] = (cnt[m.san]||0) + 1; });
+    const top = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+    if (!top || top[1] < 2) break;
+    sans.push(top[0]); freq.push([top[1], follow.length]); follow = follow.filter(x => x.d.moves[p] && x.d.moves[p].san===top[0]);
+  }
+  if (sans.length < 4) return null;
+  // primeiro ponto da linha em que o seu lance de costume foi mal avaliado
+  let fix = null;
+  for (let p=0; p<sans.length && !fix; p++){
+    if (!mine(p)) continue;
+    let bad = 0, good = 0, alt = null, cls = null;
+    f.games.forEach(x => {
+      for (let q=0;q<=p;q++) if (!x.d.moves[q] || x.d.moves[q].san !== sans[q]) return;
+      const R = reviewOf(x.info); if (!R || !R.items[p]) return;
+      if (BAD.indexOf(R.items[p].c) >= 0){ bad++; if (!alt){ alt = {uci:R.items[p].bestUci, fen:R.fens[p], pv:(R.an[p] && R.an[p].lines[0] ? R.an[p].lines[0].pv : [])}; cls = R.items[p].c; } }
+      else good++;
+    });
+    if (bad && bad >= good) fix = {p, bad, n:bad+good, alt, cls};
+  }
+  const line = [];
+  const n = p => Math.floor(p/2) + 1;
+  const keepTo = fix ? fix.p : sans.length;
+  for (let p=0; p<keepTo; p++){
+    const w = contentWhy(sans, p);
+    line.push([sans[p], w || (mine(p) ? `Seu lance de costume (${freq[p][0]} de ${freq[p][1]} partidas).` : `Resposta mais comum nas suas partidas (${freq[p][0]} de ${freq[p][1]}).`)]);
+  }
+  let sum, ext = null;
+  if (fix && fix.alt && fix.alt.uci){
+    const g = new Chess(fix.alt.fen); const pv = fix.alt.pv[0]===fix.alt.uci ? fix.alt.pv : [fix.alt.uci];
+    pv.slice(0, 5).forEach((u, k) => { const m = uciMove(g, u); if (!m) return; line.push([m.san, k===0 ? `Aqui você costuma jogar ${ptSan(sans[fix.p])} (${CLS_PT(fix.cls)} em ${fix.bad} de ${fix.n} partidas). O melhor é ${ptSan(m.san)}.` : (mine(fix.p + k) ? 'Continuação recomendada pelo computador.' : 'Resposta mais provável do adversário.')]); });
+    sum = `Ajuste: no lance ${n(fix.p)}, troque ${ptSan(sans[fix.p])} por ${ptSan(line[fix.p][0])}.`;
+  } else {
+    // ponto forte: continuar a linha com o computador para ir além de onde você costuma ir
+    const x = follow.map(x => reviewOf(x.info)).find(R => R && R.an[sans.length] && R.an[sans.length].lines[0]);
+    if (x){ const g = new Chess(x.fens[sans.length]); x.an[sans.length].lines[0].pv.slice(0, 4).forEach((u, k) => { const m = uciMove(g, u); if (m){ line.push([m.san, k===0 ? 'Daqui em diante você costuma sair da linha. Esta é a continuação mais forte.' : 'Continuação recomendada pelo computador.']); ext = true; } }); }
+    sum = ext ? 'Aprofunde a linha que você já conhece.' : 'Você joga bem essa linha. Revise para não esquecer.';
+  }
+  const id = f.side + '-' + f.name.normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return {id, side:f.side, rep:true, fix:!!fix, name:`${f.name} (${f.side==='w' ? 'brancas' : 'pretas'})`, tag:f.name, rec:`${f.W}V ${f.D}E ${f.L}D`, sum, line};
+}
 function lessonById(key){
   const [t, id] = key.split(':');
+  if (t==='r') return REP[id] ? {t:'o', x:REP[id]} : null;
   if (t==='o') return {t, x: CONTENT.openings.find(o => o.id===id)};
   if (t==='c') return {t, x: CONTENT.concepts.find(o => o.id===id)};
   if (t==='m') return {t, x: CONTENT.mates.find(o => o.id===id)};
@@ -984,17 +1075,32 @@ function renderLearn(){
   const v = $('v-learn'); const pr = profile();
   const recs = [];
   if (pr){ pr.W.forEach(w => { if (w.learn) recs.push(w.learn); }); }
-  const ops = openingStats(); const badW = ops.find(o => o.color==='w' && o.n>=2 && o.L/o.n>=0.5), badB = ops.find(o => o.color==='b' && o.n>=2 && o.L/o.n>=0.5);
-  if (badW) recs.push('o:italiana'); if (badB) recs.push('o:carokann');
-  const recU = Array.from(new Set(recs)).slice(0, 3);
+  // repertório pessoal + aberturas ligadas ao que você joga
+  const reps = repertoire().map(buildRepLesson).filter(Boolean);
+  Object.keys(REP).forEach(k => delete REP[k]); reps.forEach(r => REP[r.id] = r);
+  const same = name => CONTENT.openings.filter(o => o.tag && (name.indexOf(o.tag) >= 0 || o.tag.indexOf(name) >= 0));
+  openingStats().forEach(o => {
+    if (o.n < 2) return;
+    const match = same(o.name).filter(x => x.side===o.color);
+    if (o.W / o.n >= 0.6) match.slice(0, 1).forEach(x => recs.unshift('o:' + x.id));
+    else if (o.L / o.n >= 0.5){
+      if (match.length) recs.push('o:' + match[0].id);
+      const alt = CONTENT.openings.find(x => x.side===o.color && x.group!=='Defesas' && match.indexOf(x) < 0 && !S.learn['o:' + x.id]);
+      if (alt) recs.push('o:' + alt.id);
+    }
+  });
+  const recU = Array.from(new Set(recs)).slice(0, 4);
   const finalFen = o => { const g = new Chess(); o.line.forEach(([s]) => g.move(s)); return g.fen(); };
   const ocard = o => `<button class="tcard" data-l="o:${o.id}">${mini(finalFen(o), o.side)}<b>${esc(o.name)}</b><small>${esc(o.sum)}</small>${S.learn['o:'+o.id] ? '<small style="color:var(--green)">✓ Praticada</small>' : ''}</button>`;
   const ccard = c => `<button class="tcard" data-l="c:${c.id}">${mini(c.fen, c.fen.split(' ')[1])}<b>${esc(c.name)}</b>${S.learn['c:'+c.id] ? '<small style="color:var(--green)">✓ Feita</small>' : ''}</button>`;
   const mcard = m => `<button class="tcard" data-l="m:${m.id}">${mini(m.fen, 'w')}<b>${esc(m.name)}</b>${S.learn['m:'+m.id] ? '<small style="color:var(--green)">✓ Concluído</small>' : '<small>Contra o computador</small>'}</button>`;
+  const repFen = o => { const g = new Chess(); o.line.forEach(([x]) => g.move(x)); return g.fen(); };
+  const rcard = o => `<button class="tcard" data-l="r:${o.id}">${mini(repFen(o), o.side)}<b>${esc(o.name)}</b><small>${esc(o.rec)} · ${o.fix ? '<span style="color:var(--c-imp)">Tem ajuste</span>' : '<span style="color:var(--green)">Ponto forte</span>'}</small><small>${esc(o.sum)}</small></button>`;
   const anyCard = key => { const l = lessonById(key); if (!l || !l.x) return ''; return l.t==='o' ? ocard(l.x) : l.t==='c' ? ccard(l.x) : mcard(l.x); };
   const groups = {};
   CONTENT.openings.forEach(o => (groups[o.group] = groups[o.group] || []).push(o));
   v.innerHTML = `<div class="page-h"><h1>Aprender</h1></div>
+    ${reps.length ? `<div class="sec-h">Seu repertório</div><div class="cards">${reps.map(rcard).join('')}</div>` : ''}
     ${recU.length ? `<div class="sec-h">Recomendado para você</div><div class="cards">${recU.map(anyCard).join('')}</div>` : ''}
     ${Object.keys(groups).map(gk => `<div class="sec-h">Aberturas · ${esc(gk)}</div><div class="cards">${groups[gk].map(ocard).join('')}</div>`).join('')}
     <div class="sec-h">Estratégia</div><div class="cards">${CONTENT.concepts.map(ccard).join('')}</div>
