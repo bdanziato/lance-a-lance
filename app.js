@@ -646,9 +646,21 @@ function lineText(fen, pv, n){
   return parts.join(' ');
 }
 const tagHTML = tags => tags.length ? `<div class="tags">${tags.map(t => `<span class="tag${NEG.indexOf(t)>=0 || t==='peca_pendurada' ? ' neg' : ''}" title="${esc(TAG[t][1])}">${TAG[t][0]}</span>`).join('')}</div>` : '';
+function teachOf(R, i){
+  const tc = R._tc || (R._tc = {}); if (tc[i]) return tc[i];
+  const oc = R.userColor==='w' ? 'b' : 'w';
+  try { tc[i] = teachMove({base:R.fens[i], m:R.moves[i], it:R.items[i], anB:R.an[i], anA:R.an[i+1], after:R.fens[i+1], me:R.userColor, no:Math.floor(i/2)+1, opp:(R.names[oc]||{}).name, opening:R.opening}); }
+  catch(e){ tc[i] = []; }
+  return tc[i];
+}
+function teachHTML(R, i){
+  const S2 = teachOf(R, i); if (!S2.length) return '';
+  const open = S.teach !== false;
+  return `<div class="teach"><button class="teach-h" id="teachTg" aria-expanded="${open}"><span class="pc wn"></span><b>Professor: lance ${Math.floor(i/2)+1}${R.moves[i].color==='w' ? '.' : '...'}${ptSan(R.moves[i].san)}</b><span class="muted">${open ? 'Ocultar' : 'Mostrar'}</span></button>${open ? S2.map(x => `<div class="teach-s"><b>${esc(x.h)}</b><p>${esc(x.t)}</p></div>`).join('') : ''}</div>`;
+}
 function renderReviewMoves(){
   const R = RV.R, uc = R.userColor;
-  let top;
+  let top, teach = '';
   if (RV.retry){
     const r = RV.retry;
     top = bubble(r.done ? (r.ok ? 'Isso!' : 'Solução') : 'Encontre o melhor lance', `<p>${r.msg || 'Jogue o lance que você faria nesta posição.'}</p>`) +
@@ -662,6 +674,7 @@ function renderReviewMoves(){
     const showBest = c.best && (RV.best || BAD.indexOf(it.c)>=0);
     top = bubble(`${ptSan(m.san)} é ${meta.a}<span class="ev">${ev}</span>`, `<p>${c.text}</p>${showBest ? `<div class="best">Melhor: <b>${ptSan(c.best.san)}</b>${c.line ? ' · ' + c.line : ''}</div>` : ''}${tagHTML(c.tags)}`, clsIcon(it.c, true));
     const mine = m.color===uc;
+    teach = teachHTML(R, i);
     top += `<div class="row">${c.best ? '<button class="btn sm go" id="rvWhy">Por quê?</button>' : ''}${c.best && !showBest ? '<button class="btn sm" id="rvBest"><svg><use href="#i-bulb"/></svg>Melhor lance</button>' : ''}${mine && BAD.indexOf(it.c)>=0 ? '<button class="btn sm" id="rvRetry"><svg><use href="#i-retry"/></svg>Tentar de novo</button>' : ''}${mine ? `<a class="btn sm" href="${trainerHref(R, i)}" target="_blank" rel="noopener">Perguntar ao treinador</a>` : ''}</div>`;
   }
   const items = R.items;
@@ -674,7 +687,7 @@ function renderReviewMoves(){
   }
   list += '</div>'; strip += '</div>';
   const mob = window.matchMedia('(max-width:900px)').matches;
-  $('rvBody').innerHTML = top + (mob ? strip : list);
+  $('rvBody').innerHTML = top + (mob ? strip + teach : teach + list);
   $('rvFoot').innerHTML = `<div class="ctrls"><button class="btn" data-nav="first" aria-label="Início"><svg><use href="#i-first"/></svg></button><button class="btn" data-nav="prev" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button><button class="btn go" data-nav="next" aria-label="Próximo"><svg><use href="#i-next"/></svg></button><button class="btn" data-nav="last" aria-label="Fim"><svg><use href="#i-last"/></svg></button></div><button class="btn sm" id="rvNextErr">Próximo erro seu ›</button>`;
   const cb = $('rvBody').querySelector('button.cur');
   if (cb){
@@ -682,6 +695,7 @@ function renderReviewMoves(){
     if (mob && strip) strip.scrollLeft = cb.offsetLeft - strip.clientWidth/2 + cb.offsetWidth/2;
     else { const box = $('rvBody'); const top = cb.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop; if (top < box.scrollTop + 120 || top > box.scrollTop + box.clientHeight - 40) box.scrollTop = top - box.clientHeight/2; }
   }
+  const tg = $('teachTg'); if (tg) tg.onclick = () => { S.teach = S.teach===false; save(); renderReview(); };
   const b1 = $('rvBest'); if (b1) b1.onclick = () => { RV.best = true; renderReview(); };
   const b0 = $('rvWhy'); if (b0) b0.onclick = () => openCompare(RV.ply - 1);
   const b2 = $('rvRetry'); if (b2) b2.onclick = () => { startRetry(RV.ply); renderReview(); };

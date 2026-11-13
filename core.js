@@ -460,3 +460,114 @@ function narrate(o){
   return N;
 }
 function lowerFirst(s){ return s ? s[0].toLowerCase() + s.slice(1) : s; }
+
+/* ===== professor: explicação completa de cada lance da revisão ===== */
+const CLS_WHY = {
+  brilhante:'um sacrifício que funciona, o tipo de lance mais difícil de achar',
+  otimo:'o único lance que mantinha a vantagem ou salvava a posição',
+  melhor:'o lance que o computador escolheria',
+  excelente:'quase tão bom quanto o melhor; a diferença é mínima',
+  bom:'um lance sólido, mas havia opção mais forte',
+  livro:'um lance conhecido da teoria de aberturas',
+  forcado:'o único lance legal ou o único que não perdia na hora',
+  imprecisao:'perdeu um pouco da vantagem; não é grave, mas havia lance melhor',
+  erro:'perdeu bastante da vantagem e mudou o rumo da posição',
+  perdido:'deixou passar uma chance clara que o adversário tinha dado',
+  capivarada:'um erro grave, que costuma decidir a partida'
+};
+const TAG_RULE = {
+  garfo:'Antes de cada lance, olhe as casas onde um cavalo ou peão inimigo atacaria duas peças suas de uma vez.',
+  cravada:'Peças alinhadas com o rei ou a dama são alvos: evite deixar uma peça sozinha na frente delas.',
+  cravada_abs:'Peças alinhadas com o rei são alvos: uma cravada deixa a peça presa.',
+  espeto:'Cuidado com rei e dama na mesma linha ou diagonal: um espeto ganha a peça de trás.',
+  ataque_descoberto:'Quando uma peça sua está na frente de uma torre, bispo ou dama, mexer nela pode revelar um ataque.',
+  xeque_descoberto:'Um xeque descoberto é dos golpes mais fortes: a peça que sai pode capturar o que quiser.',
+  peca_indefesa:'Conte quem ataca e quem defende cada peça. Peça sem defesa é peça em perigo.',
+  peca_pendurada:'Antes de soltar a peça, pergunte: o que ficou sem defesa?',
+  ganho_material:'Capture quando a conta de material sai a seu favor; confira a recaptura antes.',
+  mate:'Procure sempre xeques primeiro: às vezes o mate está a um lance.',
+  ameaca_mate:'Quando o rei está com poucas casas, veja se dá para ameaçar mate.',
+  mate_corredor:'Dê ao seu rei uma "janela" (um peão avançado) para não levar mate na última fileira.',
+  promocao:'Peão passado deve ser empurrado; o rei e as torres ajudam a escoltá-lo.'
+};
+function teachMove(o){
+  // o: {base, m, it, anB, anA, after, me (cor do aluno), no, opp, opening}
+  const {base, m, it, anB, anA, after, me, no} = o;
+  const actor = m.color, isMe = actor===me, who = isMe ? 'Você' : (o.opp || 'O adversário');
+  const gA = new Chess(after);
+  const S = [];
+  const uci = m.from + m.to + (m.promotion || '');
+  // 1) o que foi feito
+  let t;
+  if (m.flags.indexOf('k')>=0) t = `${who} ${isMe ? 'rocou' : 'rocou'} do lado do rei: o rei vai para um canto protegido e a torre entra em jogo.`;
+  else if (m.flags.indexOf('q')>=0) t = `${who} rocou do lado da dama: o rei sai do centro e a torre vai para a coluna d.`;
+  else {
+    t = `${who} ${m.captured ? 'capturou com' : 'levou'} ${PART[m.piece]} de ${m.from} para ${m.to}${m.captured ? `, tomando ${PUM[m.captured]}` : ''}${m.promotion ? ` e promoveu a ${PNAME[m.promotion]}` : ''}.`;
+  }
+  if (gA.in_checkmate()) t += ' É xeque-mate: fim de partida.';
+  else if (gA.in_check()) t += ' O lance dá xeque.';
+  const intent = intentOf(base, uci, null).parts.filter(p => !/^(dá xeque|captura|dá xeque-mate)/.test(p));
+  if (intent.length) t += ` Com isso, ${intent.join(' e ')}.`;
+  const tg = tacticsOf(base, m).concat(strategyOf(base, m, no)).filter((x, k, a) => a.indexOf(x)===k && x!=='troca');
+  const good = tg.filter(x => NEG.indexOf(x)<0), bad = tg.filter(x => NEG.indexOf(x)>=0);
+  if (good.length) t += ' Ideia: ' + good.slice(0, 2).map(x => `${TAG[x][0].toLowerCase()} (${TAG[x][1]})`).join('; ') + '.';
+  if (bad.length) t += ' Cuidado: ' + bad.map(x => `${TAG[x][0].toLowerCase()}, ${TAG[x][1]}`).join('; ') + '.';
+  S.push({h:'O lance', t});
+  // 2) avaliação (sempre do ponto de vista do aluno)
+  const forMe = (score, turn) => turn===me ? score : neg(score);
+  const level = s => { if (!s) return 'equilibrada';
+    if ('mate' in s) return s.mate===0 ? 'xeque-mate' : s.mate > 0 ? `você tem mate em ${s.mate}` : `o adversário tem mate em ${-s.mate}`;
+    const a = Math.abs(s.cp), side = s.cp > 0 ? 'você' : 'o adversário';
+    return a < 50 ? 'equilibrada' : a < 150 ? `${side} tem uma vantagem pequena` : a < 400 ? `${side} tem uma vantagem clara` : `${side} tem uma vantagem decisiva`; };
+  const fmt = s => !s ? '0.0' : ('mate' in s) ? (s.mate===0 ? '#' : `M${Math.abs(s.mate)}`) : `${s.cp>=0?'+':''}${(s.cp/100).toFixed(1)}`;
+  const sB = forMe(anB.score, base.split(' ')[1]);
+  const sA = gA.in_checkmate() ? {mate: actor===me ? 1 : -1, done:1} : forMe(anA.score, after.split(' ')[1]);
+  const lvA = sA.done ? (actor===me ? 'você venceu' : 'o adversário venceu') : level(sA);
+  S.push({h:'Avaliação', t:`Antes: ${fmt(sB)} (${level(sB)}). Depois: ${sA.done ? '#' : fmt(sA)} (${lvA}). Classificação: ${CLS[it.c].n.toLowerCase()}, ${CLS_WHY[it.c] || ''}.`});
+  // 3) opções que havia
+  const opts = (anB.lines || []).filter(l => l.pv && l.pv[0]).slice(0, 2);
+  if (opts.length && it.c!=='forcado'){
+    const parts = opts.map((l, k) => {
+      const mv = uciMove(new Chess(base), l.pv[0]); if (!mv) return '';
+      const tt = tacticsOf(base, mv).concat(strategyOf(base, mv, no)).filter(x => NEG.indexOf(x)<0 && x!=='troca');
+      const s = forMe(l.score, base.split(' ')[1]);
+      return `${k===0 ? 'A melhor era' : 'Outra boa era'} ${ptSan(mv.san)}${l.pv[0]===uci ? ' (foi o lance jogado)' : ''}, avaliação ${fmt(s)}${isMe ? '' : ' para você'}${tt.length ? `: ${TAG[tt[0]][1]}` : ''}. Sequência provável: ${linePT(base, l.pv, 4)}.`;
+    }).filter(Boolean);
+    if (parts.length) S.push({h:'Opções que havia', t: parts.join(' ')});
+  }
+  // 4) por que o melhor é melhor
+  const bestU = it.bestUci;
+  if (bestU && bestU!==uci && opts.length && it.c!=='livro'){
+    const mineL = lineInfo(base, [uci].concat(anA.lines && anA.lines[0] ? anA.lines[0].pv.slice(0, 5) : []), actor);
+    const bestL = lineInfo(base, opts[0].pv.slice(0, 6), actor);
+    const sum = (L) => { if (L.mate) return L.mate===actor ? 'termina em xeque-mate a favor de quem jogou' : 'termina em xeque-mate contra quem jogou';
+      const g = piecesText(L.gain), l = piecesText(L.lost); return !g && !l ? 'ninguém ganha material' : `${g ? 'ganha ' + g : 'não ganha nada'}${l ? ' e perde ' + l : ''}`; };
+    let w = whyText(base, mineL, bestL, actor);
+    if (!isMe) w = w.replace(/sua posição/g, 'a posição dele').replace(/você/g, 'ele').replace(/Você/g, 'Ele');
+    S.push({h:'Por que o melhor lance é melhor', t:`Com ${ptSan(m.san)}, a sequência provável é ${linePT(base, mineL.ucis, 6)} e ${sum(mineL)}. Com ${ptSan(bestL.sans[0])}: ${linePT(base, bestL.ucis, 6)}, e ${sum(bestL)}. ${w}`});
+  } else if (bestU===uci && it.c!=='livro' && it.c!=='forcado'){
+    S.push({h:'Por que é bom', t:`${isMe ? 'Você encontrou' : 'Ele encontrou'} o melhor lance da posição. ${good.length ? 'O ponto forte: ' + TAG[good[0]][1] + '.' : 'Nenhuma outra opção deixava a posição tão boa.'}`});
+  }
+  // 5) e agora?
+  if (!gA.game_over() && anA.lines && anA.lines[0] && anA.lines[0].pv[0]){
+    const next = after.split(' ')[1], rep = uciMove(new Chess(after), anA.lines[0].pv[0]);
+    if (rep){
+      const rt = tacticsOf(after, rep).filter(x => STRONG.indexOf(x)>=0 && x!=='troca');
+      const hang = hangingAfter(base, m);
+      let nt = next===me ? `Agora é a sua vez. O melhor lance é ${ptSan(rep.san)}` : `Agora o adversário deve jogar ${ptSan(rep.san)}`;
+      nt += rt.length ? `, com ${(FEM.indexOf(rt[0])>=0 ? 'uma ' : 'um ') + TAG[rt[0]][0].toLowerCase()} (${TAG[rt[0]][1]}).` : '.';
+      if (next!==me && hang && isMe) nt += ` Atenção: ${PART[hang.t]} em ${hang.sq} ficou sem defesa suficiente.`;
+      if (next===me && !isMe && rt.length) nt += ' Procure esse lance antes de passar para o próximo.';
+      S.push({h:'E agora?', t: nt});
+    }
+  } else if (gA.in_stalemate()) S.push({h:'E agora?', t:'Afogamento: o rei não está em xeque, mas não há lance legal. A partida termina empatada.'});
+  // 6) lição
+  const key = (BAD.indexOf(it.c)>=0 ? tacticsOf(after, anA.lines && anA.lines[0] ? uciMove(new Chess(after), anA.lines[0].pv[0]) : null) : tg).find(x => TAG_RULE[x]);
+  const map = boardMap(new Chess(after)); let pcs = 0; for (const s in map) if (map[s].type!=='p' && map[s].type!=='k') pcs++;
+  const lesson = key ? TAG_RULE[key]
+    : no <= 10 ? 'Na abertura: desenvolva cavalos e bispos, ocupe o centro e faça o roque cedo. Evite mexer a mesma peça duas vezes.'
+    : pcs <= 6 ? 'No final: traga o rei para o centro, empurre peões passados e troque peças se estiver com material a mais.'
+    : 'No meio-jogo: a cada lance, veja xeques, capturas e ameaças, dos dois lados, nessa ordem. Depois, melhore sua pior peça.';
+  S.push({h:'Lição', t: lesson});
+  return S;
+}
