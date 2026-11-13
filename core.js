@@ -538,8 +538,8 @@ function teachMove(o){
   // 4) por que o melhor é melhor
   const bestU = it.bestUci;
   if (bestU && bestU!==uci && opts.length && it.c!=='livro'){
-    const mineL = lineInfo(base, [uci].concat(anA.lines && anA.lines[0] ? anA.lines[0].pv.slice(0, 5) : []), actor);
-    const bestL = lineInfo(base, opts[0].pv.slice(0, 6), actor);
+    const mineL = lineInfo(base, quietCut(base, [uci].concat(anA.lines && anA.lines[0] ? anA.lines[0].pv : []), 7), actor);
+    const bestL = lineInfo(base, quietCut(base, opts[0].pv, 7), actor);
     const sum = (L) => { if (L.mate) return L.mate===actor ? 'termina em xeque-mate a favor de quem jogou' : 'termina em xeque-mate contra quem jogou';
       const g = piecesText(L.gain), l = piecesText(L.lost); return !g && !l ? 'ninguém ganha material' : `${g ? 'ganha ' + g : 'não ganha nada'}${l ? ' e perde ' + l : ''}`; };
     let w = whyText(base, mineL, bestL, actor);
@@ -570,4 +570,96 @@ function teachMove(o){
     : 'No meio-jogo: a cada lance, veja xeques, capturas e ameaças, dos dois lados, nessa ordem. Depois, melhore sua pior peça.';
   S.push({h:'Lição', t: lesson});
   return S;
+}
+
+/* ===== professor nos exercícios: por que o melhor lance é melhor que o seu ===== */
+// Ameaças imediatas de `side` na posição (como se fosse a vez dele): mate em 1 e peças que ele ganharia
+function threatsOf(fen, side){
+  const p = fen.split(' '); p[1] = side; p[3] = '-'; const f = p.join(' ');
+  let g; try { g = new Chess(f); } catch(e){ return []; }
+  if (!g.moves) return [];
+  const out = []; const map = boardMap(g); const other = side==='w' ? 'b' : 'w';
+  // se o rei do outro lado já está em xeque, essa posição não é válida para "passar a vez"
+  const t = new Chess(f); if (t.in_check()) return [];
+  g.moves({verbose:true}).forEach(m => {
+    const h = new Chess(f); h.move(m);
+    if (h.in_checkmate()){ out.push({k:'mate', m, v:100}); return; }
+    if (m.captured){
+      const defended = attackersOf(boardMap(h), m.to, other).length > 0;
+      const gain = defended ? VAL[m.captured] - VAL[m.piece] : VAL[m.captured];
+      if (gain >= 2) out.push({k:'ganha', m, v:gain, piece:m.captured});
+    }
+  });
+  return out.sort((a, b) => b.v - a.v);
+}
+// corta a sequência num ponto "calmo": nunca logo antes de uma recaptura
+function quietCut(base, ucis, max){
+  const g = new Chess(base), caps = [];
+  for (const u of ucis){ const m = uciMove(g, u); if (!m) break; caps.push(!!m.captured); }
+  let k = Math.min(max || 8, caps.length);
+  while (k > 1 && caps[k] === true) k--;
+  return ucis.slice(0, k);
+}
+function coachPuzzle(o){
+  // o: {base, played (obj), bestUci, bestPv, afterPv (resposta do adversário em diante), me, opp, wb, wa}
+  const {base, played, me} = o; const opp = me==='w' ? 'b' : 'w'; const oname = o.opp || 'o adversário';
+  const best = uciMove(new Chess(base), o.bestUci); if (!best) return [];
+  const pm = ptSan(played.san), pb = ptSan(best.san);
+  const S = [];
+  const after = fenAfter(base, played), afterB = fenAfter(base, best);
+  // 1) o que ele ameaçava antes do seu lance
+  const thr = threatsOf(base, opp)[0];
+  const stillM = thr ? threatsOf(after, opp).find(x => x.m.san===thr.m.san) : null;
+  const stillB = thr ? threatsOf(afterB, opp).find(x => x.m.san===thr.m.san) : null;
+  const thrTxt = thr ? (thr.k==='mate' ? `mate com ${ptSan(thr.m.san)}` : `${ptSan(thr.m.san)}, ganhando ${PUM[thr.piece]}`) : '';
+  // 2) o que acontece depois do seu lance
+  const mineL = lineInfo(base, quietCut(base, [played.from + played.to + (played.promotion||'')].concat(o.afterPv || []), 8), me);
+  const bestL = lineInfo(base, quietCut(base, o.bestPv && o.bestPv[0]===o.bestUci ? o.bestPv : [o.bestUci], 8), me);
+  const reply = mineL.ucis[1] ? uciMove((() => { const g = new Chess(base); uciMove(g, mineL.ucis[0]); return g; })(), mineL.ucis[1]) : null;
+  const rt = reply ? tacticsOf(after, reply).filter(x => STRONG.indexOf(x)>=0 && x!=='troca') : [];
+  let t1 = `Na partida você jogou ${pm}`;
+  const ip = intentOf(base, played.from + played.to + (played.promotion||''), null).parts;
+  t1 += ip.length ? `, que ${ip.join(' e ')}.` : '.';
+  if (best.captured && VAL[best.captured] >= 3 && played.to!==best.to) t1 += ` O problema: ${PART[best.captured]} de ${oname} em ${best.to} estava ao seu alcance, e ${pb} capturava essa peça.`;
+  else if (thr && stillM && !stillB) t1 += ` O problema: ${oname} ameaçava ${thrTxt}, e ${pm} não resolve isso.`;
+  else if (reply && rt.length) t1 += ` O problema: depois dele, ${oname} responde ${ptSan(reply.san)}, ${(FEM.indexOf(rt[0])>=0 ? 'uma ' : 'um ') + TAG[rt[0]][0].toLowerCase()} (${TAG[rt[0]][1]}).`;
+  else if (reply) t1 += ` A melhor resposta de ${oname} seria ${ptSan(reply.san)}.`;
+  const wTxt = w => w >= 85 ? 'você fica ganhando' : w >= 60 ? 'você continua melhor' : w > 40 ? 'a posição fica equilibrada' : w > 15 ? `${oname} fica melhor` : 'a posição fica perdida para você';
+  const matTxt = (L, w) => { const g = piecesText(L.gain), l = piecesText(L.lost); if ((L.saldo >= 2 && w > 60) || (L.saldo <= -2 && w < 40)) return `${g ? 'você ganha ' + g : 'você não ganha nada'}${l ? ' e perde ' + l : ''}, e `; return ''; };
+  const sm = mineL.mate ? (mineL.mate===me ? 'você daria mate' : 'você levaria mate') : matTxt(mineL, o.wa) + wTxt(o.wa);
+  t1 += ` Na sequência ${linePT(base, mineL.ucis)}, ${sm}.`;
+  S.push({h:'O que deu errado', t:t1});
+  // 3) por que o melhor é melhor
+  const bp = intentOf(base, o.bestUci, null).parts;
+  const bt = tacticsOf(base, best).concat(strategyOf(base, best, 20)).filter(x => NEG.indexOf(x)<0 && x!=='troca');
+  let t2 = `${pb}${bp.length ? ' ' + bp.join(' e ') : ''}.`;
+  if (thr && stillM && !stillB) t2 += ` Ele também acaba com a ameaça de ${thrTxt}.`;
+  { const gb = new Chess(base); uciMove(gb, o.bestUci); const mp = boardMap(gb); const hit = attacksFrom(mp, best.to).map(q => mp[q]).filter(x => x && x.color===opp && x.type!=='k' && VAL[x.type] > VAL[best.piece]).sort((a, b) => VAL[b.type] - VAL[a.type])[0];
+    if (hit && !gb.in_check()) t2 += ` Isso ganha tempo: ${oname} precisa gastar o lance salvando ${PART[hit.type]}, enquanto você desenvolve o seu jogo.`; }
+  if (bt.length) t2 += ` É ${(FEM.indexOf(bt[0])>=0 ? 'uma ' : 'um ') + TAG[bt[0]][0].toLowerCase()}: ${TAG[bt[0]][1]}.`;
+  const sb = bestL.mate ? (bestL.mate===me ? 'termina em xeque-mate a seu favor' : 'ainda leva mate') : matTxt(bestL, o.wb) + wTxt(o.wb);
+  t2 += ` Sequência: ${linePT(base, bestL.ucis)}, e ${sb}.`;
+  const d = Math.round(o.wb - o.wa); if (d > 0) t2 += ` Em chance de vitória, a diferença entre os dois lances é de ${d} pontos (${Math.round(o.wb)}% contra ${Math.round(o.wa)}%).`;
+  S.push({h:`Por que ${pb} é melhor`, t:t2});
+  // 4) como pensar na próxima vez
+  let tip;
+  if (thr && stillM && !stillB) tip = 'Antes de pensar no seu plano, olhe o último lance do adversário e pergunte: "o que ele quer fazer agora?". Se ele ameaça algo, defenda primeiro.';
+  else if (rt.length && TAG_RULE[rt[0]]) tip = TAG_RULE[rt[0]];
+  else if (bt.length && TAG_RULE[bt[0]]) tip = TAG_RULE[bt[0]];
+  else tip = 'Antes de jogar, faça a checagem do professor: quais xeques, capturas e ameaças existem para mim? E para ele? Só depois escolha o lance.';
+  S.push({h:'Como pensar na próxima vez', t:tip});
+  return S;
+}
+function fenAfter(fen, m){ const g = new Chess(fen); g.move({from:m.from, to:m.to, promotion:m.promotion}); return g.fen(); }
+// exercícios comuns: explica a ideia da solução
+function coachTactic(fen, ucis, themes){
+  const g = new Chess(fen); const first = uciMove(new Chess(fen), ucis[0]); if (!first) return [];
+  const me = first.color; const info = lineInfo(fen, ucis, me);
+  const tg = tacticsOf(fen, first).filter(x => STRONG.indexOf(x)>=0 && x!=='troca');
+  const ip = intentOf(fen, ucis[0], null).parts;
+  let t = `${ptSan(first.san)}${ip.length ? ' ' + ip.join(' e ') : ''}.`;
+  if (tg.length && !(tg[0]==='mate' && ip.indexOf('dá xeque-mate')>=0)) t += ` É ${(FEM.indexOf(tg[0])>=0 ? 'uma ' : 'um ') + TAG[tg[0]][0].toLowerCase()}: ${TAG[tg[0]][1]}.`;
+  t += ` Solução: ${linePT(fen, info.ucis)}. ` + (info.mate===me ? (info.ucis.length > 1 ? 'Termina em xeque-mate.' : '') : piecesText(info.gain) ? `No fim você ganha ${piecesText(info.gain)}${piecesText(info.lost) ? ' e entrega ' + piecesText(info.lost) : ''}.` : '');
+  const rule = tg.map(x => TAG_RULE[x]).find(Boolean) || 'Procure sempre lances forçados primeiro: xeques, capturas e ameaças.';
+  return [{h:'A ideia', t}, {h:'Para levar para o jogo', t:rule}];
 }

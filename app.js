@@ -1098,12 +1098,32 @@ function pzRender(){
   pzStage.top.innerHTML = ''; pzStage.bot.innerHTML = '';
   pzPanel();
 }
+function pzCoachHTML(p){
+  if (PZ.coach && PZ.coach.id===p.id) return PZ.coach.html;
+  let S2 = [];
+  try {
+    if (p.mine){
+      const R = G.Rs[p.mine.rid] || (G.list.find(x => x.id===p.mine.rid) && reviewOf(G.list.find(x => x.id===p.mine.rid)));
+      const i = p.mine.ply - 1;
+      if (R && R.moves[i]){
+        const it = R.items[i];
+        S2 = coachPuzzle({base:R.fens[i], played:R.moves[i], bestUci:it.bestUci, bestPv:R.an[i].lines[0] ? R.an[i].lines[0].pv : [it.bestUci], afterPv:R.an[i+1] && R.an[i+1].lines[0] ? R.an[i+1].lines[0].pv : [], me:R.userColor, opp:p.mine.opp, wb:it.wb, wa:it.wa});
+        if (p.alt && p.alt[1] && p.alt[1].length){ const a = moveFromUci(R.fens[i], p.alt[1][0]); if (a) S2.splice(2, 0, {h:'Outra opção boa', t:`${ptSan(a.san)} também era quase tão forte quanto o melhor lance, por isso conta como certo.`}); }
+      }
+    } else if (p.moves && p.moves.length > 1){
+      const g = new Chess(p.fen); uciMove(g, p.moves[0]);
+      S2 = coachTactic(g.fen(), p.moves.slice(1), p.themes || []);
+    }
+  } catch(e){ S2 = []; }
+  const html = S2.length ? `<div class="teach"><div class="teach-h"><span class="pc wn"></span><b>Professor</b></div>${S2.map(x => `<div class="teach-s"><b>${esc(x.h)}</b><p>${esc(x.t)}</p></div>`).join('')}</div>` : '';
+  PZ.coach = {id:p.id, html}; return html;
+}
 function pzPanel(){
   const p = PZ.p; $('pzRating').textContent = Math.round(S.pz);
   const turn = `<div class="turn"><i class="${PZ.solver}"></i>${PZ.solver==='w' ? 'Brancas' : 'Pretas'} jogam</div>`;
   const ctx = p.mine ? `<p class="muted" style="margin:0;font-size:14px">Da sua partida contra <b style="color:#fff">${esc(p.mine.opp||'')}</b>. Você jogou ${ptSan(p.mine.played)}; encontre o melhor.</p>` : `<p class="muted" style="margin:0;font-size:14px">${PZ.done ? (p.themes.filter(t => THEMES[t]).map(t => THEMES[t].n).join(' · ') || 'Tática') : 'Encontre o melhor lance.'}</p>`;
   const fb = PZ.msg ? `<div class="fb ${PZ.msg.k}"><span class="ic">${PZ.msg.k==='ok' ? '✓' : PZ.msg.k==='bad' ? '✕' : 'i'}</span>${PZ.msg.t}</div>` : '';
-  $('pzBody').innerHTML = turn + ctx + fb;
+  $('pzBody').innerHTML = turn + ctx + fb + (PZ.done ? pzCoachHTML(p) : '');
   $('pzFoot').innerHTML = PZ.done
     ? `<button class="btn go big" id="pzNext">Próximo exercício</button>${p.mine ? '<button class="btn sm" id="pzGame">Ver na partida</button>' : ''}`
     : `<div class="row"><button class="btn sm" id="pzHint"><svg><use href="#i-bulb"/></svg>Dica</button><button class="btn sm" id="pzSol"><svg><use href="#i-eye"/></svg>Solução</button><button class="btn sm ghost" id="pzSkip">Pular</button></div>`;
