@@ -15,7 +15,7 @@ const plural = (n, a, b) => n===1 ? a : b;
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 
 /* ---------- configurações ---------- */
-const S = Object.assign({user:'', sound:true, elo:800, off:0, color:'w', tc:'600+0', pz:900, pzDone:{}, pzDay:'', pzToday:0, pzStreak:0, learn:{}}, store.get('lal3') || {});
+const S = Object.assign({user:'', auto:true, sound:true, elo:800, off:0, color:'w', tc:'600+0', pz:900, pzDone:{}, pzDay:'', pzToday:0, pzStreak:0, learn:{}}, store.get('lal3') || {});
 if (!S.user){ const old = store.get('lal2-settings'); if (old && old.user){ S.user = old.user; S.elo = old.elo || S.elo; } }
 const save = () => store.set('lal3', S);
 
@@ -265,7 +265,7 @@ async function fetchGames(){
     gamesMsg(list.length ? '' : 'Nenhuma partida nos últimos meses. Jogue uma no chess.com e toque em Atualizar.');
   } catch(e){ gamesMsg(ccErr(e) + (G.list.length ? ' Mostrando as partidas guardadas.' : '')); }
   G.loading = false; $('refreshBtn').disabled = false;
-  renderMe(); refreshCurrent(); bgRun();
+  renderMe(); refreshCurrent(); bgRun(); setTimeout(watchTick, 1500);
 }
 function gamesMsg(t){ $('gamesMsg').textContent = t || ''; $('gamesMsg').hidden = !t; }
 function bestRating(){
@@ -305,8 +305,8 @@ function setBg(t, f){ $('bgProg').hidden = !t; $('bgProgText').textContent = t |
 /* =====================================================================
    Navegação
    ===================================================================== */
-const VIEWS = ['v-games','v-review','v-stats','v-puzzles','v-puzzle','v-learn','v-lesson','v-play'];
-const TAB_OF = {'v-games':'games','v-review':'games','v-stats':'stats','v-puzzles':'puzzles','v-puzzle':'puzzles','v-learn':'learn','v-lesson':'learn','v-play':'play'};
+const VIEWS = ['v-games','v-live','v-review','v-stats','v-puzzles','v-puzzle','v-learn','v-lesson','v-play'];
+const TAB_OF = {'v-games':'games','v-live':'games','v-review':'games','v-stats':'stats','v-puzzles':'puzzles','v-puzzle':'puzzles','v-learn':'learn','v-lesson':'learn','v-play':'play'};
 const HOME = {games:'v-games', stats:'v-stats', puzzles:'v-puzzles', learn:'v-learn', play:'v-play'};
 let cur = 'v-games';
 function show(v, sub){
@@ -330,7 +330,7 @@ function refreshCurrent(bg){
   else if (cur==='v-learn' && !bg) renderLearn();
 }
 function back(){ if (history.state && history.state.sub) history.back(); else show(HOME[TAB_OF[cur]]); }
-window.addEventListener('popstate', () => { if (['v-review','v-puzzle','v-lesson'].indexOf(cur)>=0) show(HOME[TAB_OF[cur]]); });
+window.addEventListener('popstate', () => { if (['v-review','v-live','v-puzzle','v-lesson'].indexOf(cur)>=0) show(HOME[TAB_OF[cur]]); });
 $('nav').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b){ if (history.state && history.state.sub) history.replaceState(null, ''); show(HOME[b.dataset.tab]); } });
 function renderMe(){
   const r = bestRating();
@@ -355,6 +355,7 @@ $('refreshBtn').addEventListener('click', fetchGames);
 function tcIcon(tc){ const id = {bullet:'i-bullet', blitz:'i-blitz', rapid:'i-rapid', daily:'i-daily'}[tc] || 'i-rapid'; return `<svg><use href="#${id}"/></svg>`; }
 const fmtDate = t => t ? new Date(t*1000).toLocaleDateString('pt-BR', {day:'2-digit', month:'short'}) : '';
 function renderGames(){
+  renderWatch(); renderLiveList();
   const L = $('gameList');
   if (!G.list.length){ L.innerHTML = G.loading ? '<div class="empty">Buscando suas partidas…</div>' : '<div class="empty">Nenhuma partida ainda.</div>'; return; }
   L.innerHTML = G.list.map((info, k) => {
@@ -365,6 +366,121 @@ function renderGames(){
   }).join('');
 }
 $('gameList').addEventListener('click', e => { const b = e.target.closest('[data-g]'); if (b){ const info = G.list[+b.dataset.g]; if (info) openGame(info); } });
+
+
+/* =====================================================================
+   Acompanhamento: revisão automática + partidas diárias em andamento
+   Durante a partida NÃO usamos o motor: só livro de aberturas e o seu
+   próprio histórico (permitido pelo chess.com nas partidas diárias).
+   ===================================================================== */
+const LIVE = {list:[], at:0};
+let watchBusy = false;
+const ccName = u => String(u || '').split('/').pop();
+function liveInfo(g){
+  const lu = String(S.user || '').toLowerCase();
+  const side = ccName(g.white).toLowerCase()===lu ? 'w' : 'b';
+  return {g, side, op: ccName(side==='w' ? g.black : g.white), myTurn: (g.turn==='white') === (side==='w'), id: g.url};
+}
+async function watchTick(){
+  if (!S.user || document.hidden || G.loading || watchBusy) return;
+  watchBusy = true; const lu = S.user.toLowerCase();
+  try {
+    const cg = await ccJSON(CC + encodeURIComponent(lu) + '/games').catch(() => null);
+    if (cg){ LIVE.list = (cg.games || []).filter(g => g.rules==='chess' && g.pgn).map(liveInfo).sort((a, b) => (b.myTurn - a.myTurn) || ((a.g.move_by||0) - (b.g.move_by||0))); LIVE.at = Date.now(); }
+    if (S.auto && G.list.length){
+      const d = new Date(); const url = `${CC}${encodeURIComponent(lu)}/games/${d.getUTCFullYear()}/${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+      const m = await ccJSON(url).catch(() => null);
+      const newest = G.list[0].g.end_time || 0, ids = new Set(G.list.map(i => i.id));
+      const fresh = m && m.games ? m.games.filter(g => g.rules==='chess' && g.pgn && g.white && g.black && (g.end_time||0) > newest).map(gameInfo).filter(i => !ids.has(i.id)).sort((a, b) => b.g.end_time - a.g.end_time) : [];
+      if (fresh.length){
+        G.list = fresh.concat(G.list).slice(0, 30); G.at = Date.now();
+        const c = store.get('lal-prof-cache'); if (c && c.games){ c.games = fresh.map(i => i.g).concat(c.games).slice(0, 25); c.at = G.at; store.set('lal-prof-cache', c); }
+        profCache = null; newGame(fresh[0]);
+      }
+    }
+  } finally { watchBusy = false; }
+  if (cur==='v-games') renderGames();
+  else if (cur==='v-live' && LV) liveRender();
+}
+function newGame(info){
+  snd('ok');
+  const idle = cur==='v-games' || cur==='v-live';
+  if (idle){ toast(`Partida contra ${info.op.username || 'seu adversário'} terminou. Abrindo a revisão…`); show('v-games'); openGame(info); return; }
+  const nb = $('newBar');
+  nb.innerHTML = `<span><b>Partida nova</b> contra ${esc(info.op.username || '?')} (${info.res==='W' ? 'vitória' : info.res==='L' ? 'derrota' : 'empate'})</span><button class="btn sm go" id="nbGo">Revisar</button><button class="btn ghost sm" id="nbX" aria-label="Fechar">✕</button>`;
+  nb.hidden = false;
+  $('nbGo').onclick = () => { nb.hidden = true; if (history.state && history.state.sub) history.replaceState(null, ''); show('v-games'); openGame(info); };
+  $('nbX').onclick = () => { nb.hidden = true; };
+  setTimeout(bgRun, 0);
+}
+function renderWatch(){
+  const el = $('watchLine'); if (!el) return;
+  el.innerHTML = !S.user ? '' : S.auto
+    ? `<span class="dot on"></span><span>Acompanhando: quando uma partida terminar no chess.com, a revisão abre sozinha.</span><button class="linkish" id="watchToggle">Desligar</button>`
+    : `<span class="dot"></span><span>Revisão automática desligada.</span><button class="linkish" id="watchToggle">Ligar</button>`;
+  const b = $('watchToggle'); if (b) b.onclick = () => { S.auto = !S.auto; save(); renderWatch(); if (S.auto) watchTick(); };
+}
+function renderLiveList(){
+  const el = $('liveList'); if (!el) return;
+  if (!LIVE.list.length){ el.innerHTML = ''; return; }
+  const when = t => t ? new Date(t*1000).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+  el.innerHTML = `<div class="sec-h" style="margin-top:4px">Em andamento · diárias</div><div class="glist" style="margin-bottom:18px">${LIVE.list.map((x, k) => `<button type="button" class="grow-btn" data-live="${k}"><span class="res live${x.myTurn ? ' me' : ''}">${x.myTurn ? '!' : '…'}</span>
+    <span style="min-width:0"><span class="gopp">${esc(x.op)}</span><span class="gmeta">${tcIcon('daily')} ${x.myTurn ? `<b style="color:var(--green)">Sua vez</b>${x.g.move_by ? ' · até ' + when(x.g.move_by) : ''}` : 'Vez dele'}</span></span>
+    <span class="gacc"><span class="dim" style="font-size:12px">Livro</span></span><span class="chev">›</span></button>`).join('')}</div><div class="sec-h">Terminadas</div>`;
+}
+$('liveList').addEventListener('click', e => { const b = e.target.closest('[data-live]'); if (b){ const x = LIVE.list[+b.dataset.live]; if (x) openLive(x.id); } });
+setInterval(watchTick, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) watchTick(); });
+
+/* --- tela da partida diária: livro e histórico, nunca o motor --- */
+let LV = null, lvStage = null;
+function openLive(id){ if (!lvStage) lvStage = makeStage('lvBoardCol', false); LV = {id}; show('v-live', true); liveRender(); }
+$('lvBack').addEventListener('click', back);
+function bookMoves(sans){
+  const n = sans.length, out = [];
+  CONTENT.openings.forEach(o => {
+    if (o.line.length <= n) return;
+    for (let k=0;k<n;k++) if (strip(o.line[k][0]) !== strip(sans[k])) return;
+    if (!out.some(x => strip(x.san)===strip(o.line[n][0]))) out.push({san:o.line[n][0], why:o.line[n][1], name:o.name, id:o.id});
+  });
+  return out;
+}
+function myDB(side, sans){
+  const n = sans.length, cnt = {};
+  G.list.forEach(info => {
+    if (info.side!==side) return; const d = reviewData(info); if (!d || d.startFen!==START || d.moves.length <= n) return;
+    for (let k=0;k<n;k++) if (strip(d.moves[k].san) !== strip(sans[k])) return;
+    const s = d.moves[n].san; const c = cnt[s] || (cnt[s] = {san:s, n:0, W:0, D:0, L:0}); c.n++; c[info.res]++;
+  });
+  return Object.values(cnt).sort((a, b) => b.n - a.n).slice(0, 4);
+}
+function liveRender(){
+  const x = LIVE.list.find(l => l.id===LV.id);
+  if (!x){ $('lvBody').innerHTML = bubble('Essa partida não está mais em andamento', '<p>Se ela terminou, já aparece nas suas partidas para revisar.</p>'); $('lvFoot').innerHTML = ''; return; }
+  const p = parsePGN(x.g.pgn); const sans = (p.moves || []).map(m => m.san);
+  const g = new Chess(p.startFen || START); let last = null; p.moves.forEach(m => { const r = g.move(m.san); if (r) last = [r.from, r.to]; });
+  const me = x.side, op = me==='w' ? 'b' : 'w', turn = g.turn(), mine = turn===me;
+  const book = g.game_over() ? [] : bookMoves(sans), db = g.game_over() ? [] : myDB(me, sans);
+  const capt = capturedBy(g.fen());
+  lvStage.top.innerHTML = playerHTML({name:x.op, color:op, caps:capt[op], diff: op==='w' ? capt.diff : -capt.diff});
+  lvStage.bot.innerHTML = playerHTML({name:S.user, color:me, caps:capt[me], diff: me==='w' ? capt.diff : -capt.diff});
+  const arrows = book.slice(0, 2).map((b, k) => { const mv = new Chess(g.fen()).move(b.san); return mv ? {from:mv.from, to:mv.to, color:'#4fa3e0', op: k ? .45 : .8} : null; }).filter(Boolean);
+  lvStage.board.set({fen:g.fen(), orient:me, last, arrows, movable:null});
+  const oname = openingInfo(sans).name;
+  const rec = c => `${c.W}V ${c.D}E ${c.L}D`;
+  let body = bubble(mine ? 'Sua vez' : `Vez de ${x.op}`, `<p>${oname ? esc(oname) + ' · ' : ''}${sans.length ? `${Math.ceil(sans.length/2)} ${plural(Math.ceil(sans.length/2), 'lance', 'lances')}` : 'Início da partida'}</p>`);
+  if (book.length){
+    body += `<div class="lvcard"><b>${mine ? 'Pelo livro' : 'O livro espera dele'}</b>${book.slice(0, 2).map(b => `<p><span class="bk">${ptSan(b.san)}</span> ${esc(b.why || '')} <small class="muted">(${esc(b.name)})</small></p>`).join('')}</div>`;
+  }
+  if (db.length){
+    body += `<div class="lvcard"><b>${mine ? 'Nas suas partidas, daqui você jogou' : 'Seus adversários jogaram aqui'}</b><div class="row" style="flex-wrap:wrap;gap:6px">${db.map(c => `<span class="chip">${ptSan(c.san)} · ${c.n}× <span class="muted">(${rec(c)})</span></span>`).join('')}</div></div>`;
+  }
+  if (!book.length && !db.length) body += `<div class="lvcard"><b>Fora do livro</b><p>Daqui em diante é com você. Antes de cada lance: o que ele ameaça? O que fica sem defesa?</p></div>`;
+  body += `<p class="note-s muted" style="font-size:12.5px">Durante a partida o app não usa o Stockfish: mostra só a teoria de aberturas e o seu histórico, que o chess.com permite nas diárias. A análise completa aparece quando a partida terminar.</p>`;
+  $('lvBody').innerHTML = body;
+  $('lvFoot').innerHTML = `<div class="row"><a class="btn sm go" href="${esc(x.g.url)}" target="_blank" rel="noopener">Jogar no chess.com</a><button class="btn sm" id="lvRef"><svg><use href="#i-refresh"/></svg>Atualizar</button></div>`;
+  $('lvRef').onclick = () => { watchTick(); toast('Atualizando…'); };
+}
 
 /* =====================================================================
    Revisão (estilo "revisão de partida")
@@ -1426,5 +1542,5 @@ SF.init().then(kind => {
 });
 window.addEventListener('resize', () => { if (cur==='v-review' && RV && RV.mode==='moves') renderReview(); });
 // gancho de diagnóstico (usado só em testes)
-window.__lal = {PZ: () => PZ, LS: () => LS, RV: () => RV, PL: () => PL, cur: () => cur, sf: () => SF.kind};
+window.__lal = {watch: () => watchTick(), PZ: () => PZ, LS: () => LS, RV: () => RV, PL: () => PL, cur: () => cur, sf: () => SF.kind};
 })();

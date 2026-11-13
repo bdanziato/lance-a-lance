@@ -1,5 +1,5 @@
 // Lance a Lance: guarda o app no aparelho para funcionar sem internet.
-const CACHE = 'lance-a-lance-v6';
+const CACHE = 'lance-a-lance-v7';
 const FILES = ['./', 'index.html', 'app.css', 'pieces.css', 'app.js', 'core.js', 'engine.js', 'content.js', 'puzzles.js', 'chess.js',
   'stockfish-18-lite-single.js', 'stockfish-18-lite-single.wasm', 'stockfish-10.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
