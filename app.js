@@ -15,7 +15,7 @@ const plural = (n, a, b) => n===1 ? a : b;
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 
 /* ---------- configurações ---------- */
-const S = Object.assign({user:'', auto:true, sound:true, elo:800, off:0, color:'w', tc:'600+0', pz:900, pzDone:{}, pzDay:'', pzToday:0, pzStreak:0, learn:{}}, store.get('lal3') || {});
+const S = Object.assign({user:'', auto:true, coach:'1', sound:true, elo:800, off:0, color:'w', tc:'600+0', pz:900, pzDone:{}, pzDay:'', pzToday:0, pzStreak:0, learn:{}}, store.get('lal3') || {});
 if (!S.user){ const old = store.get('lal2-settings'); if (old && old.user){ S.user = old.user; S.elo = old.elo || S.elo; } }
 const save = () => store.set('lal3', S);
 
@@ -1247,9 +1247,18 @@ function renderLearn(){
   const repFen = o => { const g = new Chess(); o.line.forEach(([x]) => g.move(x)); return g.fen(); };
   const rcard = o => `<button class="tcard" data-l="r:${o.id}">${mini(repFen(o), o.side)}<b>${esc(o.name)}</b><small>${esc(o.rec)} · ${o.fix ? '<span style="color:var(--c-imp)">Tem ajuste</span>' : '<span style="color:var(--green)">Ponto forte</span>'}</small><small>${esc(o.sum)}</small></button>`;
   const anyCard = key => { const l = lessonById(key); if (!l || !l.x) return ''; return l.t==='o' ? ocard(l.x) : l.t==='c' ? ccard(l.x) : mcard(l.x); };
+  // todas as aberturas das suas partidas, cada uma ligada a uma lição
+  const mineOps = openingStats().filter(o => o.name!=='Outras').map(o => {
+    const m = same(o.name); const x = m.find(y => y.side===o.color) || m[0];
+    const rep = reps.find(r => r.side===o.color && r.tag===o.name);
+    return {o, key: x ? 'o:' + x.id : rep ? 'r:' + rep.id : null, x};
+  }).filter(y => y.key);
+  const scard = y => { const o = y.o, l = lessonById(y.key).x; const w = pct(o.W, o.n), d = pct(o.D, o.n);
+    return `<button class="tcard" data-l="${y.key}">${mini(finalFen(l), l.side)}<b>${esc(o.name)}</b><small>${o.color==='w' ? 'Brancas' : 'Pretas'} · ${o.W}V ${o.D}E ${o.L}D</small><span class="wdl"><i style="width:${w}%;background:var(--green)"></i><i style="width:${d}%;background:var(--dim)"></i><i style="flex:1;background:var(--red,#e05b49)"></i></span><small>Lição: ${esc(l.name)}</small>${S.learn[y.key] ? '<small style="color:var(--green)">✓ Praticada</small>' : ''}</button>`; };
   const groups = {};
   CONTENT.openings.forEach(o => (groups[o.group] = groups[o.group] || []).push(o));
   v.innerHTML = `<div class="page-h"><h1>Aprender</h1></div>
+    ${mineOps.length ? `<div class="sec-h">Suas aberturas</div><div class="cards">${mineOps.map(scard).join('')}</div>` : ''}
     ${reps.length ? `<div class="sec-h">Seu repertório</div><div class="cards">${reps.map(rcard).join('')}</div>` : ''}
     ${recU.length ? `<div class="sec-h">Recomendado para você</div><div class="cards">${recU.map(anyCard).join('')}</div>` : ''}
     ${Object.keys(groups).map(gk => `<div class="sec-h">Aberturas · ${esc(gk)}</div><div class="cards">${groups[gk].map(ocard).join('')}</div>`).join('')}
@@ -1428,8 +1437,9 @@ function playSetup(){
     <div class="opt-row"><span>Seu Elo</span><div class="row"><input class="input" id="plElo" type="number" min="100" max="3000" step="25" value="${S.elo}" style="max-width:120px"><span class="muted" style="font-size:13px">${bestRating() ? 'Puxado do chess.com' : ''}</span></div></div>
     <div class="opt-row"><span>Adversário</span>${segb('off', [[-200,'Mais fácil'],[0,'Mesmo nível'],[200,'Desafio']], S.off)}</div>
     <div class="opt-row"><span>Cor</span>${segb('color', [['w','Brancas'],['r','Sorteio'],['b','Pretas']], S.color)}</div>
+    <div class="opt-row"><span>Professor ao vivo</span>${segb('coach', [['1','Ligado'],['0','Desligado']], S.coach)}</div>
     <div class="opt-row"><span>Ritmo</span>${segb('tc', [['0','Livre'],['600+0','10 min'],['300+3','5+3'],['180+2','3+2']], S.tc)}</div>
-    <p class="muted" style="margin:0;font-size:13.5px">Computador com Elo ~${bot}. No fim, a partida vai direto para a revisão.</p></div>`;
+    <p class="muted" style="margin:0;font-size:13.5px">Computador com Elo ~${bot}. ${S.coach==='1' ? 'O professor comenta cada lance seu e do computador. ' : ''}No fim, a partida vai direto para a revisão.</p></div>`;
   $('plFoot').innerHTML = `<button class="btn go big" id="plStart">Jogar</button>`;
   $('plStart').onclick = playStart;
   $('plElo').onchange = () => { const e = parseInt($('plElo').value, 10); if (!isNaN(e)){ S.elo = clampElo(e); save(); playSetup(); } };
@@ -1445,7 +1455,7 @@ function playStart(){
   PL = {g:new Chess(), me:c, bot:clampElo(S.elo + S.off), over:false, busy:false, clock: tc ? {w:tc[0], b:tc[0], inc:tc[1]||0, run:null, t:0} : null, hint:null, id:Date.now()};
   playRender();
   clearInterval(plTick); plTick = setInterval(playClock, 200);
-  if (c==='b') playBot();
+  if (c==='b') playBot(); else coachPre();
 }
 function playLeave(){ /* a partida continua guardada; o relógio só anda com a aba aberta */ if (PL && PL.clock && PL.clock.run){ playClockCommit(); PL.clock.run = null; PL.paused = true; } }
 function playClockCommit(){ const c = PL.clock; if (!c || !c.run) return; const now = performance.now(); c[c.run] -= (now - c.t)/1000; c.t = now; }
@@ -1470,15 +1480,18 @@ function playRender(anim){
   for (let i=0;i<sans.length;i+=2) strip += `<span class="num">${i/2+1}.</span><button class="${i===sans.length-1?'cur':''}">${ptSan(sans[i])}</button>${sans[i+1] ? `<button class="${i+1===sans.length-1?'cur':''}">${ptSan(sans[i+1])}</button>` : ''}`;
   strip += '</div>';
   const status = PL.busy ? 'O computador está pensando…' : g.in_check() ? 'Xeque!' : 'Sua vez';
-  $('plBody').innerHTML = `<div class="turn"><i class="${g.turn()}"></i>${status}</div>${op_ ? `<p class="muted" style="margin:0;font-size:13.5px">${esc(op_)}</p>` : ''}${sans.length ? strip : '<p class="muted" style="margin:0">Toque numa peça e depois na casa, ou arraste.</p>'}`;
+  $('plBody').innerHTML = `<div class="turn"><i class="${g.turn()}"></i>${status}</div>${op_ ? `<p class="muted" style="margin:0;font-size:13.5px">${esc(op_)}</p>` : ''}${sans.length ? strip : '<p class="muted" style="margin:0">Toque numa peça e depois na casa, ou arraste.</p>'}` + coachHTML();
   const canUndo = hist.some(m => m.color===me);
   $('plFoot').innerHTML = `<div class="row"><button class="btn sm" id="plHint" ${PL.busy?'disabled':''}><svg><use href="#i-bulb"/></svg>Dica</button><button class="btn sm" id="plUndo" ${PL.busy||!canUndo?'disabled':''}><svg><use href="#i-retry"/></svg>Voltar</button><button class="btn sm" id="plResign" ${PL.busy||hist.length<2?'disabled':''}>${PL.armed ? 'Confirmar desistência' : 'Desistir'}</button></div>`;
   $('plHint').onclick = playHint; $('plUndo').onclick = playUndo; $('plResign').onclick = playResign;
+  const cr = $('coachRetry'); if (cr) cr.onclick = playUndo;
 }
 function playMove(from, to, promo){
   if (!PL || PL.over || PL.busy) return false;
+  const base = PL.g.fen();
   const m = PL.g.move({from, to, promotion:promo}); if (!m) return false;
   playAfter(m);
+  coachUser(m, base);
 }
 function playAfter(m){
   PL.hint = null; PL.armed = false;
@@ -1493,6 +1506,66 @@ function playAfter(m){
   }
   playRender({from:m.from, to:m.to});
   if (PL.g.turn()!==PL.me) playBot();
+}
+
+/* --- professor ao vivo (só contra o computador do app) --- */
+const coachOn = () => S.coach !== '0' && PL && !PL.over;
+function coachPre(){
+  if (!coachOn() || PL.g.turn()!==PL.me || PL.g.game_over()) return;
+  const fen = PL.g.fen();
+  PL.pre = {fen, p: analysePos(fen, {movetime:500, multipv:2, jsDepth:2, jsMs:500}, 1)};
+}
+function liveCls(base, m, wb, wa, isBest, ply, sans){
+  if (new Chess(base).moves().length===1) return 'forcado';
+  const op = openingInfo(sans); if (ply < op.len && ply < 20) return 'livro';
+  const d = isBest ? 0 : Math.max(0, wb - wa);
+  if (isBest) return 'melhor'; if (d < 2) return 'excelente'; if (d < 5) return 'bom'; if (d < 10) return 'imprecisao'; if (d < 20) return 'erro'; return 'capivarada';
+}
+async function coachUser(m, base){
+  if (!coachOn()) return;
+  const id = PL.id, ply = PL.g.history().length - 1, sans = PL.g.history(), after = fenAfter(base, m);
+  PL.coach = {user:{loading:true, san:m.san}, bot:null}; playRender();
+  const pre = PL.pre && PL.pre.fen===base ? await PL.pre.p : await analysePos(base, {movetime:500, multipv:2, jsDepth:2, jsMs:500}, 1);
+  const post = await analysePos(after, {movetime:500, multipv:1, jsDepth:2, jsMs:500}, 1);
+  if (!PL || PL.id!==id || !PL.coach || !PL.coach.user || PL.coach.user.san!==m.san) return;
+  const bestUci = pre.lines[0] ? pre.lines[0].pv[0] : uciOf(m);
+  const wb = winPct(pre.lines[0] ? pre.lines[0].score : pre.score), wa = 100 - winPct(post.lines[0] ? post.lines[0].score : post.score);
+  const c = liveCls(base, m, wb, wa, bestUci===uciOf(m), ply, sans);
+  let sec = [];
+  try { sec = teachMove({base, m, it:{c, bestUci, wb, wa}, anB:pre, anA:post, after, me:PL.me, no:Math.floor(ply/2)+1, opp:'O computador'}); } catch(e){}
+  const bad = BAD.indexOf(c) >= 0;
+  const keep = sec.filter(x => x.h==='O lance' || x.h.indexOf('Por que')===0 || (bad && (x.h==='Opções que havia' || x.h==='Lição')));
+  PL.coach.user = {san:m.san, c, sec:keep, bad};
+  playRender();
+}
+function coachBot(m, base){
+  if (!coachOn()) return; if (!PL.coach) PL.coach = {user:null, bot:null};
+  const after = fenAfter(base, m), uci = uciOf(m);
+  const ip = intentOf(base, uci, null).parts;
+  const tg = tacticsOf(base, m).concat(strategyOf(base, m, Math.floor(PL.g.history().length/2))).filter((x, k, a) => a.indexOf(x)===k && NEG.indexOf(x)<0 && x!=='troca');
+  const thr = PL.g.game_over() ? null : threatsOf(after, m.color)[0];
+  let t = `${ptSan(m.san)}${ip.length ? ': ' + ip.join(' e ') : ''}.`;
+  if (tg.length) t += ` Ideia: ${TAG[tg[0]][0].toLowerCase()} (${TAG[tg[0]][1]}).`;
+  let warn = '';
+  if (thr) warn = thr.k==='mate' ? `Cuidado: ele ameaça mate com ${ptSan(thr.m.san)}!` : `Cuidado: ele ameaça ${ptSan(thr.m.san)}, ganhando ${PUM[thr.piece]}.`;
+  else if (!PL.g.game_over()) { const mine = threatsOf(after, PL.me)[0]; if (mine && mine.v >= 3) warn = 'Olhe bem: existe uma captura boa para você nesta posição.'; }
+  PL.coach.bot = {t, warn};
+  playRender();
+}
+function coachHTML(){
+  if (S.coach==='0' || !PL || !PL.coach) return S.coach!=='0' && PL && !PL.g.history().length ? `<div class="coach"><div class="coach-h"><span class="pc wn"></span><b>Professor</b></div><p>Jogue o seu lance. Eu comento cada jogada sua e do computador. Lembre: centro, desenvolvimento e roque.</p></div>` : '';
+  const u = PL.coach.user, b = PL.coach.bot; let h = '';
+  if (u){
+    if (u.loading) h += `<p class="muted">Analisando ${esc(ptSan(u.san))}…</p>`;
+    else {
+      const meta = CLS[u.c];
+      h += `<div class="coach-mv"><span class="cls" style="--c:var(${meta.c})">${meta.s}</span><b>Seu lance ${esc(ptSan(u.san))}: ${esc(meta.n.toLowerCase())}</b></div>`;
+      h += u.sec.map(x => `<div class="teach-s"><b>${esc(x.h)}</b><p>${esc(x.t)}</p></div>`).join('');
+      if (u.bad && !PL.over) h += `<button class="btn sm" id="coachRetry"><svg><use href="#i-retry"/></svg>Voltar e tentar de novo</button>`;
+    }
+  }
+  if (b) h += `<div class="teach-s"><b>Resposta do computador</b><p>${esc(b.t)}</p>${b.warn ? `<p class="coach-warn">${esc(b.warn)}</p>` : ''}</div>`;
+  return h ? `<div class="coach"><div class="coach-h"><span class="pc wn"></span><b>Professor</b></div>${h}</div>` : '';
 }
 function botParams(elo){
   if (elo < 500) return {depth:1, mpv:5, temp:28, blunder:0.16};
@@ -1530,6 +1603,7 @@ async function playBot(){
     PL.busy = false;
     const m = PL.g.move({from:u.slice(0,2), to:u.slice(2,4), promotion:u[4]||'q'}) || PL.g.move(legal[0]);
     playAfter(m);
+    coachBot(m, fen); coachPre();
   }, wait);
 }
 async function playHint(){
@@ -1541,7 +1615,7 @@ async function playHint(){
 function playUndo(){
   if (!PL || PL.busy || PL.over) return;
   if (PL.g.turn()===PL.me) PL.g.undo();
-  PL.g.undo(); PL.hint = null;
+  PL.g.undo(); PL.hint = null; PL.coach = null; coachPre();
   if (PL.clock){ PL.clock.run = PL.g.history().length ? PL.g.turn() : null; PL.clock.t = performance.now(); }
   playRender();
 }

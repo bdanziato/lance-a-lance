@@ -541,7 +541,7 @@ function teachMove(o){
     const mineL = lineInfo(base, quietCut(base, [uci].concat(anA.lines && anA.lines[0] ? anA.lines[0].pv : []), 7), actor);
     const bestL = lineInfo(base, quietCut(base, opts[0].pv, 7), actor);
     const sum = (L) => { if (L.mate) return L.mate===actor ? 'termina em xeque-mate a favor de quem jogou' : 'termina em xeque-mate contra quem jogou';
-      const g = piecesText(L.gain), l = piecesText(L.lost); return !g && !l ? 'ninguém ganha material' : `${g ? 'ganha ' + g : 'não ganha nada'}${l ? ' e perde ' + l : ''}`; };
+      const g = piecesText(L.gain), l = piecesText(L.lost); const sj = isMe ? 'você' : 'ele'; return !g && !l ? 'ninguém ganha material' : `${sj} ${g ? 'ganha ' + g : 'não ganha nada'}${l ? ' e perde ' + l : ''}`; };
     let w = whyText(base, mineL, bestL, actor);
     if (!isMe) w = w.replace(/sua posição/g, 'a posição dele').replace(/você/g, 'ele').replace(/Você/g, 'Ele');
     S.push({h:'Por que o melhor lance é melhor', t:`Com ${ptSan(m.san)}, a sequência provável é ${linePT(base, mineL.ucis, 6)} e ${sum(mineL)}. Com ${ptSan(bestL.sans[0])}: ${linePT(base, bestL.ucis, 6)}, e ${sum(bestL)}. ${w}`});
